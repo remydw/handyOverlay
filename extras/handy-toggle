@@ -1,0 +1,68 @@
+#!/bin/sh
+# Toggle Handy dictation.
+# The USB speaker dongle holds its playback endpoint while any stream is linked to
+# it, and no USB capture can start meanwhile (xHCI ENOMEM), and vice versa. So:
+#  start: pause the playing MPRIS players (remembered), move the default output to
+#         HDMI so streams leave the USB sink, wait until it suspends, start Handy.
+#  stop:  stop Handy, wait for the USB mic to release, restore the default output,
+#         then resume the players that we paused.
+# Set HANDY_DRYRUN=1 to skip the actual Handy toggle (testing).
+cache=${XDG_CACHE_HOME:-$HOME/.cache}
+log=$cache/handy-toggle.log
+prev=$cache/handy-prev-sink
+resume=$cache/handy-resume
+usb_re='alsa_output.usb-10ae_USB_Audio'
+hdmi_re='alsa_output.pci-0000_c1_00.1.hdmi'
+mpris=org.mpris.MediaPlayer2
+
+node_id() { pw-cli ls Node 2>/dev/null | awk -v re="$1" '/^\tid /{gsub(",","",$2); id=$2} index($0,"node.name = \"" re){print id; exit}'; }
+state_of() { pw-cli info "$1" 2>/dev/null | sed -n 's/.*state: "\(.*\)".*/\1/p' | head -1; }
+recording() { grep -E 'TranscribeAction::(start|stop) called' "$HOME/.local/share/com.pais.handy/logs/handy.log" | tail -1 | grep -q 'start called'; }
+players() { busctl --user list --no-legend 2>/dev/null | awk -v p="$mpris." 'index($1,p)==1{print $1}'; }
+player_call() { busctl --user call "$1" /org/mpris/MediaPlayer2 $mpris.Player "$2" >/dev/null 2>&1; }
+
+t0=$(date +%s.%N)
+if recording; then
+    action=stop
+    (
+        mic=$(node_id 'alsa_input.usb-Generic_USB_Audio')
+        for _ in $(seq 1 100); do
+            [ -z "$mic" ] || [ "$(state_of "$mic")" = suspended ] && break
+            sleep 0.1
+        done
+        if [ -s "$prev" ]; then
+            wpctl set-default "$(cat "$prev")" >/dev/null 2>&1 && rm -f "$prev"
+        fi
+        sleep 1
+        if [ -s "$resume" ]; then
+            while read -r p; do player_call "$p" Play; done < "$resume"
+            printf '%s resumed: %s\n' "$(date +%T)" "$(tr '\n' ' ' < "$resume")" >> "$log"
+        fi
+        rm -f "$resume"
+        printf '%s restored after mic release\n' "$(date +%T)" >> "$log"
+    ) &
+else
+    action=start
+    : > "$resume"
+    for p in $(players); do
+        if busctl --user get-property "$p" /org/mpris/MediaPlayer2 $mpris.Player PlaybackStatus 2>/dev/null | grep -q Playing; then
+            echo "$p" >> "$resume"
+            player_call "$p" Pause
+        fi
+    done
+    usb=$(node_id "$usb_re"); hdmi=$(node_id "$hdmi_re")
+    cur=$(wpctl status 2>/dev/null | sed -n '/Sinks:/,/Sources:/p' | grep -oE '\*[[:space:]]+[0-9]+' | grep -oE '[0-9]+' | head -1)
+    if [ -n "$usb" ] && [ "$cur" = "$usb" ] && [ -n "$hdmi" ]; then
+        echo "$cur" > "$prev"
+        wpctl set-default "$hdmi" >/dev/null 2>&1
+    fi
+    if [ -n "$usb" ]; then
+        for _ in $(seq 1 60); do
+            [ "$(state_of "$usb")" = suspended ] && break
+            sleep 0.1
+        done
+    fi
+fi
+printf '%s %s waited=%.1fs usb_sink=%s paused=%s\n' "$(date +%T)" "$action" "$(echo "$(date +%s.%N) - $t0" | bc)" "$(state_of "${usb:-0}")" "$(tr '\n' ' ' < "$resume" 2>/dev/null)" >> "$log"
+[ -n "$HANDY_DRYRUN" ] || pkill -USR2 -x handy
+wait 2>/dev/null; :

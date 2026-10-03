@@ -1,0 +1,9 @@
+// Include from config.kdl with:  include optional=true "handy.kdl"
+// Replace /home/YOU with your home directory (niri does not expand ~).
+binds {
+    Mod+S repeat=false hotkey-overlay-title="Handy: toggle dictation" { spawn "/home/YOU/.local/bin/handy-toggle"; }
+}
+
+// Start Handy hidden at login. HANDY_NO_GTK_LAYER_SHELL=1 keeps niri from treating
+// Handy's overlay as the active window (which breaks the paste target).
+spawn-at-startup "env" "HANDY_NO_GTK_LAYER_SHELL=1" "/home/YOU/Apps/Handy.AppImage" "--start-hidden"

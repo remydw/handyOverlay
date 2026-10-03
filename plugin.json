@@ -1,0 +1,15 @@
+{
+    "id": "handyOverlay",
+    "name": "Handy Overlay",
+    "description": "Floating pill with a live mic waveform while Handy is recording or transcribing",
+    "version": "0.1.0",
+    "author": "remydw",
+    "type": "composite",
+    "capabilities": ["daemon"],
+    "components": {
+        "daemon": "./Daemon.qml"
+    },
+    "icon": "mic",
+    "requires_dms": ">=1.5.0",
+    "permissions": []
+}
