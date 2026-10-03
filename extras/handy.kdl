@@ -1,9 +1,17 @@
-// Include from config.kdl with:  include optional=true "handy.kdl"
+// niri config for Handy. Include from config.kdl with:  include optional=true "handy.kdl"
 // Replace /home/YOU with your home directory (niri does not expand ~).
+// Use ONE of the two spawn-at-startup lines below.
+
 binds {
+    // SIGUSR2 toggles Handy's transcription. repeat=false: a held key must not
+    // send several signals, they would cancel each other.
     Mod+S repeat=false hotkey-overlay-title="Handy: toggle dictation" { spawn "/home/YOU/.local/bin/handy-toggle"; }
 }
 
-// Start Handy hidden at login. HANDY_NO_GTK_LAYER_SHELL=1 keeps niri from treating
-// Handy's overlay as the active window (which breaks the paste target).
-spawn-at-startup "env" "HANDY_NO_GTK_LAYER_SHELL=1" "/home/YOU/Apps/Handy.AppImage" "--start-hidden"
+// A) Native package (.deb/.rpm, Handy >= 0.9.8): Handy's own layer-shell overlay works.
+spawn-at-startup "env" "GDK_BACKEND=wayland" "/usr/bin/handy" "--start-hidden"
+
+// B) AppImage (its hook forces X11, so there is no layer-shell overlay; use the DMS pill plugin).
+//    HANDY_NO_GTK_LAYER_SHELL=1 stops niri treating Handy's fallback overlay window as the
+//    active window, which breaks the paste target.
+// spawn-at-startup "env" "HANDY_NO_GTK_LAYER_SHELL=1" "/home/YOU/Apps/Handy.AppImage" "--start-hidden"
